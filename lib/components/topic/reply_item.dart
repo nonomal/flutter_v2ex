@@ -13,7 +13,8 @@ import 'package:flutter_v2ex/components/topic/html_render.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'dart:ui' as ui;
 import 'package:flutter/rendering.dart';
-import 'package:image_gallery_saver/image_gallery_saver.dart';
+import 'package:saver_gallery/saver_gallery.dart';
+import 'package:flutter_v2ex/utils/logger.dart';
 
 class ReplyListItem extends StatefulWidget {
   const ReplyListItem({
@@ -177,7 +178,7 @@ class _ReplyListItemState extends State<ReplyListItem>
     ).then((value) => {
           if (value != null)
             {
-              print('reply item EventBus'),
+              logDebug('reply item EventBus'),
               eventBus.emit('topicReply', value['replyStatus'])
             }
         });
@@ -247,20 +248,21 @@ class _ReplyListItemState extends State<ReplyListItem>
     SmartDialog.showLoading(msg: '保存中');
     RenderRepaintBoundary boundary =
         repaintKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
-    ui.Image image =
-        await boundary.toImage(pixelRatio: ui.window.devicePixelRatio);
+    final devicePixelRatio =
+        View.of(repaintKey.currentContext!).devicePixelRatio;
+    ui.Image image = await boundary.toImage(pixelRatio: devicePixelRatio);
     ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     Uint8List pngBytes = byteData!.buffer.asUint8List();
-    final result = await ImageGallerySaver.saveImage(
-        Uint8List.fromList(pngBytes),
-        quality: 100,
-        name:
-            "reply${reply.userName}_vvex${DateTime.now().toString().split('-').join()}");
+    final result = await SaverGallery.saveImage(
+      Uint8List.fromList(pngBytes),
+      quality: 100,
+      fileName:
+          "reply${reply.userName}_vvex${DateTime.now().toString().split('-').join()}",
+      skipIfExists: true,
+    );
     SmartDialog.dismiss();
-    if (result != null) {
-      if (result['isSuccess']) {
-        SmartDialog.showToast('已保存到相册');
-      }
+    if (result.isSuccess) {
+      SmartDialog.showToast('已保存到相册');
     }
   }
 
@@ -292,7 +294,7 @@ class _ReplyListItemState extends State<ReplyListItem>
                     color: Theme.of(context)
                         .colorScheme
                         .onInverseSurface
-                        .withOpacity(0.5),
+                        .withValues(alpha: 0.5),
                   )
                 ],
               )
@@ -310,7 +312,10 @@ class _ReplyListItemState extends State<ReplyListItem>
       clipBehavior: Clip.hardEdge,
       decoration: BoxDecoration(
           border: Border.all(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.03)),
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary
+                  .withValues(alpha: 0.03)),
           borderRadius: const BorderRadius.all(Radius.circular(18))),
       child: Hero(
         tag: reply.userName + heroTag,
@@ -419,7 +424,7 @@ class _ReplyListItemState extends State<ReplyListItem>
                                 .copyWith(
                                     color: Theme.of(context)
                                         .colorScheme
-                                        .onBackground),
+                                        .onSurface),
                           ),
                         ],
                       )
@@ -495,7 +500,7 @@ class _ReplyListItemState extends State<ReplyListItem>
     //   child: Material(
     //     color:
     //         widget.floorNumber! > 0 && reply.floorNumber == widget.floorNumber!
-    //             ? Theme.of(context).colorScheme.errorContainer.withOpacity(0.5)
+    //             ? Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.5)
     //             : reply.isOwner
     //                 ? Theme.of(context).colorScheme.onInverseSurface
     //                 : null,
@@ -561,7 +566,8 @@ class _ReplyListItemState extends State<ReplyListItem>
             TextButton(
               onPressed: replyComment,
               child: Row(children: [
-                Icon(Icons.reply, size: 20, color: color.withOpacity(0.8)),
+                Icon(Icons.reply,
+                    size: 20, color: color.withValues(alpha: 0.8)),
                 const SizedBox(width: 2),
                 Text(I18nKeyword.replyAction.tr, style: textStyle),
               ]),
@@ -581,7 +587,7 @@ class _ReplyListItemState extends State<ReplyListItem>
             // TextButton(
             //   onPressed: replyComment,
             //   child: Row(children: [
-            //     Icon(Icons.reply, size: 20, color: color.withOpacity(0.8)),
+            //     Icon(Icons.reply, size: 20, color: color.withValues(alpha: 0.8)),
             //     // const SizedBox(width: 2),
             //     // Text('回复', style: textStyle),
             //   ]),

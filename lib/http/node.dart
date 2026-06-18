@@ -9,11 +9,12 @@ import 'package:html/parser.dart'; // Contains HTML parsers to generate a Docume
 import 'package:flutter_v2ex/models/web/item_tab_topic.dart'; // 首页tab主题列表
 import 'package:flutter_v2ex/models/web/model_node_list.dart'; // 节点列表
 import 'package:flutter_v2ex/utils/storage.dart';
+import 'package:flutter_v2ex/utils/logger.dart';
 
 class NodeWebApi {
   // 获取节点下的主题
   static Future<NodeListModel> getTopicsByNodeId(String nodeId, int p) async {
-    // print('------getTopicsByNodeKey---------');
+    // logDebug('------getTopicsByNodeKey---------');
     NodeListModel detailModel = NodeListModel();
     List<TabTopicItem> topics = [];
     Response response;
@@ -79,8 +80,9 @@ class NodeWebApi {
       var totalpageNode = mainBox.querySelector(
           'div.box:not(.box-title)>div.cell:not(.tab-alt-container)');
       if (totalpageNode!.querySelectorAll('a.page_normal').isNotEmpty) {
-        detailModel.totalPage = int.parse(
-            totalpageNode.querySelectorAll('a.page_normal').last.text);
+        final totalPageText =
+            totalpageNode.querySelectorAll('a.page_normal').last.text;
+        detailModel.totalPage = int.tryParse(totalPageText) ?? 1;
       }
     }
 
@@ -89,8 +91,9 @@ class NodeWebApi {
         null) {
       var favNode = mainBox
           .querySelector('div.box:not(.box-title)>div.cell.flex-one-row>div');
-      detailModel.favoriteCount =
-          int.parse(favNode!.innerHtml.replaceAll(RegExp(r'\D'), ''));
+      final favCountText =
+          favNode!.innerHtml.replaceAll(RegExp(r'\D'), '');
+      detailModel.favoriteCount = int.tryParse(favCountText) ?? 0;
     }
 
     if (document.querySelector('#TopicsNode') != null) {
@@ -127,11 +130,18 @@ class NodeWebApi {
           String? topicUrl = aNode
               .querySelector('tr > td:nth-child(5) > span > a')!
               .attributes['href']; // 得到是 /t/522540#reply17
-          item.topicId = topicUrl!.replaceAll("/t/", "").split("#")[0];
-          item.replyCount = int.parse(topicUrl
-              .replaceAll("/t/", "")
-              .split("#")[1]
-              .replaceAll(RegExp(r'\D'), ''));
+          final topicUrlParts = topicUrl!.replaceAll('/t/', '').split('#');
+          item.topicId = topicUrlParts[0];
+
+          if (topicUrlParts.length > 1) {
+            item.replyCount =
+                int.tryParse(topicUrlParts[1].replaceAll(RegExp(r'\D'), '')) ??
+                    0;
+          } else {
+            final replyText =
+                aNode.querySelector('tr > td:nth-child(4) > a')?.text ?? '';
+            item.replyCount = int.tryParse(replyText) ?? 0;
+          }
         }
         if (aNode.querySelector('tr') != null) {
           var topicTd = aNode.querySelector('tr')!.children[2];
@@ -147,7 +157,7 @@ class NodeWebApi {
     try {
       Read().mark(topics);
     } catch (err) {
-      print(err);
+      logDebug(err);
     }
     detailModel.topicList = topics;
 
@@ -157,8 +167,9 @@ class NodeWebApi {
       // 未读消息
       var unRead =
           noticeNode.querySelector('a')!.text.replaceAll(RegExp(r'\D'), '');
-      if (int.parse(unRead) > 0) {
-        eventBus.emit('unRead', int.parse(unRead));
+      final unReadCount = int.tryParse(unRead) ?? 0;
+      if (unReadCount > 0) {
+        eventBus.emit('unRead', unReadCount);
       }
     }
 

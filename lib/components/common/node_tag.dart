@@ -5,11 +5,13 @@ class NodeTag extends StatelessWidget {
   final String? nodeId;
   final String? nodeName;
   final String? route;
+  final VoidCallback? onTapDown;
 
   const NodeTag({
     this.nodeId,
     this.nodeName,
     this.route,
+    this.onTapDown,
     super.key,
   });
 
@@ -17,12 +19,19 @@ class NodeTag extends StatelessWidget {
   Widget build(BuildContext context) {
     var bgColor = route == 'detail'
         ? Theme.of(context).colorScheme.onInverseSurface
-        : Theme.of(context).colorScheme.surfaceVariant;
+        : Theme.of(context).colorScheme.surfaceContainerHighest;
     return Material(
       borderRadius: BorderRadius.circular(50),
       color: bgColor,
       child: InkWell(
-        onTap: () => Get.toNamed('/go/$nodeId'),
+        onTapDown: (_) => onTapDown?.call(),
+        onTap: () {
+          final routeNodeId = nodeId?.trim() ?? '';
+          if (routeNodeId.isEmpty) {
+            return;
+          }
+          Get.toNamed('/go/$routeNodeId');
+        },
         borderRadius: BorderRadius.circular(50),
         child: Ink(
           padding: const EdgeInsets.symmetric(vertical: 3.5, horizontal: 10),

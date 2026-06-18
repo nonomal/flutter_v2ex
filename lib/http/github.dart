@@ -5,6 +5,7 @@ import 'package:flutter_v2ex/http/init.dart';
 import 'package:flutter_v2ex/models/version.dart';
 import 'package:flutter_v2ex/utils/string.dart';
 import 'package:flutter_v2ex/utils/utils.dart';
+import 'package:flutter_v2ex/utils/logger.dart';
 
 class GithubApi {
   static Future<Map> checkUpdate() async {
@@ -16,12 +17,13 @@ class GithubApi {
     Response response = await Request().get(
         'https://api.github.com/repos/guozhigq/flutter_v2ex/releases/latest');
     var versionDetail = VersionModel.fromJson(response.data);
-    print(versionDetail.tag_name);
+    logDebug(versionDetail.tagName);
     // 版本号
-    var version = versionDetail.tag_name;
+    var version = versionDetail.tagName;
     var updateLog = versionDetail.body;
     List<String> updateLogList = updateLog.split('\r\n');
-    var needUpdate = Utils.needUpdate(Strings.currentVersion, version);
+    var localVersion = await Strings.getCurrentVersion();
+    var needUpdate = Utils.needUpdate(localVersion, version);
     if (needUpdate) {
       SmartDialog.show(
         useSystem: true,
@@ -47,7 +49,7 @@ class GithubApi {
                   onPressed: () => SmartDialog.dismiss(),
                   child: const Text('取消')),
               TextButton(
-                // TODO
+                  // TODO
                   onPressed: () {
                     SmartDialog.dismiss();
                     Utils.openURL('${Strings.remoteUrl}/releases');
@@ -62,10 +64,12 @@ class GithubApi {
     }
     return update;
   }
+
   // 版本记录
   //https://api.github.com/repos/' + full_name + '/releases
   static Future changeLog() async {
-    var res = await Request().get('https://api.github.com/repos/guozhigq/flutter_v2ex/releases');
+    var res = await Request()
+        .get('https://api.github.com/repos/guozhigq/flutter_v2ex/releases');
     return res.data;
   }
 }

@@ -11,9 +11,11 @@ import 'package:flutter_v2ex/pages/t/controller.dart';
 import 'package:flutter_v2ex/utils/global.dart';
 import 'package:get/get.dart';
 import 'package:flutter_v2ex/components/common/pull_refresh.dart';
+import 'package:flutter_v2ex/components/common/network_error.dart';
 import 'package:flutter_v2ex/models/web/model_node_list.dart';
 import 'package:flutter_v2ex/components/home/list_item.dart';
 import 'package:flutter_v2ex/http/node.dart';
+import 'package:flutter_v2ex/utils/logger.dart';
 
 class GoPage extends StatefulWidget {
   const GoPage({super.key});
@@ -30,6 +32,8 @@ class _GoPageState extends State<GoPage> {
   int _currentPage = 0;
   int _totalPage = 1;
   bool showBackTopBtn = false;
+  bool _loadError = false;
+  String _loadErrorMsg = '';
   String nodeId = '';
   late StreamController<bool> titleStreamC; // appBar title
 
@@ -40,7 +44,7 @@ class _GoPageState extends State<GoPage> {
       nodeId = Get.parameters['nodeId']!;
     });
     getTopics();
-    print('go page');
+    logDebug('go page');
 
     titleStreamC = StreamController<bool>();
     _controller.addListener(
@@ -71,19 +75,35 @@ class _GoPageState extends State<GoPage> {
     super.dispose();
   }
 
-  void getTopics() async {
-    var res = await NodeWebApi.getTopicsByNodeId(nodeId, _currentPage + 1);
-    setState(() {
-      if (_currentPage == 0) {
-        topicList = res.topicList;
-        _totalPage = res.totalPage;
-        _topicController.setTopic(res.topicList[0]);
-      } else {
-        topicList.addAll(res.topicList);
+  Future<void> getTopics() async {
+    try {
+      var res = await NodeWebApi.getTopicsByNodeId(nodeId, _currentPage + 1);
+      if (!mounted) {
+        return;
       }
-      _currentPage += 1;
-      topicListDetail = res;
-    });
+      setState(() {
+        if (_currentPage == 0) {
+          topicList = res.topicList;
+          _totalPage = res.totalPage;
+          if (res.topicList.isNotEmpty) {
+            _topicController.setTopic(res.topicList[0]);
+          }
+        } else {
+          topicList.addAll(res.topicList);
+        }
+        _currentPage += 1;
+        topicListDetail = res;
+        _loadError = false;
+      });
+    } catch (err) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loadError = true;
+        _loadErrorMsg = err.toString();
+      });
+    }
   }
 
   Future<bool> favNode() async {
@@ -109,11 +129,11 @@ class _GoPageState extends State<GoPage> {
               controller: _controller,
               radius: const Radius.circular(10),
               child: PullRefresh(
-                onChildRefresh: () {
+                onChildRefresh: () async {
                   setState(() {
                     _currentPage = 0;
                   });
-                  getTopics();
+                  await getTopics();
                 },
                 // 上拉
                 onChildLoad: _totalPage > 1 && _currentPage < _totalPage
@@ -121,7 +141,20 @@ class _GoPageState extends State<GoPage> {
                     : null,
                 currentPage: _currentPage,
                 totalPage: _totalPage,
-                child: topicListDetail != null ? content() : showLoading(),
+                child: _loadError
+                    ? NetworkErrorPage(
+                        message: _loadErrorMsg,
+                        onRetry: () {
+                          setState(() {
+                            _currentPage = 0;
+                            _loadError = false;
+                          });
+                          getTopics();
+                        },
+                      )
+                    : topicListDetail != null
+                        ? content()
+                        : showLoading(),
               ),
             ),
             Positioned(
@@ -229,7 +262,7 @@ class _GoPageState extends State<GoPage> {
               child: Container(
                 height: 20,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.background,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: const BorderRadius.only(
                     topLeft: Radius.circular(20),
                     topRight: Radius.circular(20),
@@ -254,7 +287,7 @@ class _GoPageState extends State<GoPage> {
                     filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20), //可以看源码
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.5),
+                        color: Colors.black.withValues(alpha: 0.5),
                       ),
                     ),
                   ),
@@ -337,10 +370,10 @@ class _GoPageState extends State<GoPage> {
   }
 
   Widget showLoading() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: const [
+        children: [
           CircularProgressIndicator(
             strokeWidth: 3,
           ),

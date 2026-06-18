@@ -11,6 +11,7 @@ import 'package:flutter_v2ex/utils/event_bus.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';
 import 'package:flutter_v2ex/http/init.dart';
+import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart';
 import 'package:flutter_v2ex/package/xpath/xpath.dart';
 import 'package:flutter_v2ex/models/web/item_tab_topic.dart'; // 首页tab主题列表
@@ -18,6 +19,7 @@ import 'package:flutter_v2ex/models/web/model_login_detail.dart'; // 用户登�
 import 'package:flutter_v2ex/utils/string.dart';
 import 'package:flutter_v2ex/utils/storage.dart';
 import './node.dart';
+import 'package:flutter_v2ex/utils/logger.dart';
 
 class DioRequestWeb {
   static dynamic _parseAndDecode(String response) {
@@ -117,7 +119,7 @@ class DioRequestWeb {
     try {
       Read().mark(topicList);
     } catch (err) {
-      print(err);
+      logDebug(err);
     }
     res['topicList'] = topicList;
     var childNode = rootDom.querySelector("div[id='SecondaryTabs']");
@@ -127,7 +129,7 @@ class DioRequestWeb {
           .where((el) => el.attributes['href']!.startsWith('/go'));
       if (childNodeEls.isNotEmpty) {
         for (var i in childNodeEls) {
-          print(i);
+          logDebug(i);
           var nodeItem = {};
           nodeItem['nodeId'] = i.attributes['href']!.split('/go/')[1];
           nodeItem['nodeName'] = i.text;
@@ -150,7 +152,7 @@ class DioRequestWeb {
       var noticeEl = rightBarNode.querySelectorAll('a.fade');
       if (noticeEl.isNotEmpty) {
         var unRead = noticeEl[0].text.replaceAll(RegExp(r'\D'), '');
-        print('$unRead条未读消息');
+        logDebug('$unRead条未读消息');
         if (int.parse(unRead) > 0) {
           eventBus.emit('unRead', int.parse(unRead));
         }
@@ -159,6 +161,63 @@ class DioRequestWeb {
     res['actionCounts'] = actionCounts;
     res['balance'] = balance;
     return res;
+  }
+
+  static List<TabTopicItem> _parsePcTopicItems(dom.Document document) {
+    var topicList = <TabTopicItem>[];
+    var topicNodes = document.querySelectorAll('div.cell.item');
+    for (var aNode in topicNodes) {
+      var titleInfo = aNode.querySelector('span.item_title > a');
+      if (titleInfo == null) continue;
+
+      var item = TabTopicItem();
+      item.topicTitle = titleInfo.text.trim();
+
+      var topicUrl = titleInfo.attributes['href'] ?? '';
+      var topicIdMatch = RegExp(r'/t/(\d+)').firstMatch(topicUrl);
+      if (topicIdMatch == null) continue;
+      item.topicId = topicIdMatch.group(1)!;
+
+      var avatarSrc = aNode.querySelector('img.avatar')?.attributes['src'] ??
+          aNode.querySelector('img')?.attributes['src'];
+      if (avatarSrc != null) {
+        item.avatar = Uri.encodeFull(avatarSrc);
+      }
+
+      var countText = aNode.querySelector('a.count_livid')?.text.trim();
+      if (countText != null && countText.isNotEmpty) {
+        item.replyCount = int.tryParse(countText) ?? 0;
+      }
+
+      var topicInfo = aNode.querySelector('span.topic_info');
+      if (topicInfo != null) {
+        item.lastReplyTime = topicInfo.querySelector('span')?.text.trim() ?? '';
+
+        var nodeEl = topicInfo.querySelector('a.node');
+        if (nodeEl != null) {
+          item.nodeName = nodeEl.text.trim();
+          item.nodeId =
+              nodeEl.attributes['href']?.replaceFirst('/go/', '') ?? '';
+        }
+
+        var memberEls = topicInfo
+            .querySelectorAll('a')
+            .where(
+                (el) => el.attributes['href']?.startsWith('/member/') ?? false)
+            .toList();
+        if (memberEls.isNotEmpty) {
+          item.memberId =
+              memberEls[0].attributes['href']!.replaceFirst('/member/', '');
+        }
+        if (memberEls.length >= 2) {
+          item.lastReplyMId =
+              memberEls[1].attributes['href']!.replaceFirst('/member/', '');
+        }
+      }
+
+      topicList.add(item);
+    }
+    return topicList;
   }
 
   // 获取最新的主题
@@ -176,68 +235,29 @@ class DioRequestWeb {
         extra: {'ua': 'pc'},
       );
     } catch (err) {
-      throw (err);
+      rethrow;
     }
-    var tree = ETree.fromString(response.data);
-    var aRootNode = tree.xpath("//*[@class='cell item']");
-    for (var aNode in aRootNode!) {
-      var item = TabTopicItem();
-      item.memberId =
-          aNode.xpath("/table/tr/td[3]/span[2]/strong/a/text()")![0].name!;
-      if (aNode.xpath("/table/tr/td[1]/a[1]/img") != null &&
-          aNode.xpath("/table/tr/td[1]/a[1]/img")!.isNotEmpty) {
-        item.avatar = Uri.encodeFull(aNode
-            .xpath("/table/tr/td[1]/a[1]/img[@class='avatar']")
-            ?.first
-            .attributes["src"]);
-      }
-      String topicUrl = aNode
-          .xpath("/table/tr/td[3]/span[1]/a")
-          ?.first
-          .attributes["href"]; // 得到是 /t/522540#reply17
-      item.topicId = topicUrl.replaceAll("/t/", "").split("#")[0];
-      if (aNode.xpath("/table/tr/td[4]")!.first.children.isNotEmpty) {
-        item.replyCount =
-            int.parse(aNode.xpath("/table/tr/td[4]/a/text()")![0].name!);
-      }
-      item.lastReplyTime =
-          aNode.xpath("/table/tr/td[3]/span[2]/span/text()")![0].name!;
-      item.nodeName = aNode.xpath("/table/tr/td[3]/span[2]/a/text()")![0].name!;
-
-      item.topicTitle = aNode
-          .xpath("/table/tr/td[3]/span[1]/a/text()")![0]
-          .name!
-          .replaceAll('&quot;', '"')
-          .replaceAll('&amp;', '&')
-          .replaceAll('&lt;', '<')
-          .replaceAll('&gt;', '>');
-      item.nodeId = aNode
-          .xpath("/table/tr/td[3]/span[2]/a")
-          ?.first
-          .attributes["href"]
-          .split('/')[2];
-      topicList.add(item);
-    }
+    var document = parse(response.data);
+    topicList = _parsePcTopicItems(document);
     try {
       Read().mark(topicList);
     } catch (err) {
-      print(err);
+      logDebug(err);
     }
-    var document = parse(response.data);
     var rightBarNode = document.querySelector('#Rightbar > div.box');
-    List tableList = rightBarNode!.querySelectorAll('table');
-    if (tableList.isNotEmpty) {
-      var actionNodes = tableList[1]!.querySelectorAll('span.bigger');
+    List tableList = rightBarNode?.querySelectorAll('table') ?? [];
+    if (tableList.length >= 2) {
+      var actionNodes = tableList[1].querySelectorAll('span.bigger');
       for (var i in actionNodes) {
         actionCounts.add(int.parse(i.text ?? 0));
       }
-      if (rightBarNode.querySelector('#money') != null) {
-        balance = rightBarNode.querySelector('#money >a')!.innerHtml;
+      if (rightBarNode?.querySelector('#money') != null) {
+        balance = rightBarNode?.querySelector('#money >a')?.innerHtml ?? '';
       }
-      var noticeEl = rightBarNode.querySelectorAll('a.fade');
+      var noticeEl = rightBarNode?.querySelectorAll('a.fade') ?? [];
       if (noticeEl.isNotEmpty) {
         var unRead = noticeEl[0].text.replaceAll(RegExp(r'\D'), '');
-        // print('$unRead条未读消息');
+        // logDebug('$unRead条未读消息');
         if (int.parse(unRead) > 0) {
           eventBus.emit('unRead', int.parse(unRead));
         }
@@ -411,11 +431,11 @@ class DioRequestWeb {
 
   // 获取当前用户信息
   static Future<String> getUserInfo() async {
-    print('getUserInfo');
+    logDebug('getUserInfo');
     var response = await Request().get('/write', extra: {'ua': 'mob'});
     // SmartDialog.dismiss();
     if (response.redirects.isNotEmpty) {
-      print('getUserInfo 2fa');
+      logDebug('getUserInfo 2fa');
       // 需要两步验证
       if (response.redirects[0].location.path == "/2fa") {
         response = await Request().get('/2fa');
@@ -431,9 +451,9 @@ class DioRequestWeb {
       GStorage().setUserInfo({'avatar': avatar, 'userName': userName});
       // todo 判断用户是否开启了两步验证
       // 需要两步验证
-      print('两步验证判断');
+      logDebug('两步验证判断');
       if (response.requestOptions.path == "/2fa") {
-        print('需要两步验证');
+        logDebug('需要两步验证');
         var tree = ETree.fromString(response.data);
         // //*[@id="Wrapper"]/div/div[1]/div[2]/form/table/tbody/tr[3]/td[2]/input[1]
         String once = tree
@@ -473,7 +493,7 @@ class DioRequestWeb {
     // GStorage().setOnce(once);
     SmartDialog.dismiss();
     if (response.statusCode == 302) {
-      print('成功');
+      logDebug('成功');
       return 'true';
     } else {
       SmartDialog.showToast('验证失败，请重新输入');
@@ -487,7 +507,7 @@ class DioRequestWeb {
     SmartDialog.showLoading(msg: '表示感谢ing');
     try {
       var response = await Request().post("/thank/reply/$replyId?once=$once");
-      // print('1019 thankReply: $response');
+      // logDebug('1019 thankReply: $response');
       var data = jsonDecode(response.toString());
       SmartDialog.dismiss();
       bool responseStatus = data['success'];
@@ -545,7 +565,7 @@ class DioRequestWeb {
       // 未读消息
       var unRead =
           noticeNode.querySelector('a')!.text.replaceAll(RegExp(r'\D'), '');
-      // print('$unRead条未读消息');
+      // logDebug('$unRead条未读消息');
       if (int.parse(unRead) > 0) {
         eventBus.emit('unRead', int.parse(unRead));
       }
@@ -575,7 +595,7 @@ class DioRequestWeb {
       GStorage().setEightQuery(false);
     }
     if (lastSignDate == currentDate || GStorage().getEightQuery()) {
-      print('已签到 / 不自动签到');
+      logDebug('已签到 / 不自动签到');
       return false;
     }
     try {
@@ -586,7 +606,7 @@ class DioRequestWeb {
       if (response.statusCode == 302) {
         SmartDialog.showToast('签到成功');
       } else if (response.statusCode == 200) {
-        // print(response.redirect!);
+        // logDebug(response.redirect!);
         // log(parse(response.data).body!.innerHtml);
         var res = parse(response.data);
         var document = res.body;
@@ -613,7 +633,7 @@ class DioRequestWeb {
             }
           } else if (currentHour < 8) {
             GStorage().setEightQuery(true);
-            print("未到8点");
+            logDebug("未到8点");
           }
         }
       }
@@ -626,7 +646,7 @@ class DioRequestWeb {
   resolveNode(response, type) {
     List<Map<dynamic, dynamic>> nodesList = [];
     var document = parse(response.data);
-    var nodesBox;
+    dynamic nodesBox;
     if (type == 'mob') {
       // 【设置】中可能关闭【首页显示节点导航】
       if (document.querySelector('#Wrapper > div.content')!.children.length >=
@@ -696,7 +716,7 @@ class DioRequestWeb {
         await Request().post('/write', data: formData, options: options);
     SmartDialog.dismiss();
     var document = parse(response.data);
-    print('1830：${response.headers["location"]}');
+    logDebug('1830：${response.headers["location"]}');
     if (document.querySelector('div.problem') != null) {
       SmartDialog.show(
         useSystem: true,
@@ -822,7 +842,7 @@ class DioRequestWeb {
     Response response =
         await Request().get('/append/topic/$topicId', extra: {'ua': 'mob'});
     SmartDialog.dismiss();
-    print(response);
+    logDebug(response);
     var document = parse(response.data);
     if (document.querySelectorAll('input').length > 2) {
       var onceNode = document.querySelectorAll('input')[1];
@@ -858,7 +878,7 @@ class DioRequestWeb {
           data: formData, options: options);
       SmartDialog.dismiss();
       var document = parse(response!.data);
-      print(document);
+      logDebug(document);
       return true;
     } catch (err) {
       SmartDialog.dismiss();
@@ -875,7 +895,7 @@ class DioRequestWeb {
   //   Response response = await Request().get(
   //       'https://api.github.com/repos/guozhigq/flutter_v2ex/releases/latest');
   //   var versionDetail = VersionModel.fromJson(response.data);
-  //   print(versionDetail.tag_name);
+  //   logDebug(versionDetail.tag_name);
   //   // 版本号
   //   var version = versionDetail.tag_name;
   //   var updateLog = versionDetail.body;
